@@ -1,0 +1,349 @@
+// PARAMETER: field of constants
+//kk := GF(13);
+kk := GF(19);
+// rational function field in x
+Kx<x> := FunctionField(kk);
+// univariate polynomial ring kk(x)[y]
+Py<y> := PolynomialRing(Kx);
+// bivariate polynomial ring kk[X,Y]
+PXY<X,Y> := PolynomialRing(kk,2);
+// canonical injection kk[x] >-> kk[X,Y]
+lambda := hom< PolynomialRing(kk) -> PXY | X >;
+// natural map kk[X,Y] >-> kk(x)[y]
+eta := hom< PXY -> Py | x,y >;
+
+// PARAMETER: defining polynomial
+// EXAMPLE 1 ---
+//F := Y^2 - (X^5 - X)*(X^4 + 2); print "F=",F;
+// EXAMPLE 2 ---
+F := Y^2 + Y - X^3 + 2*X^2 - 1; print "F=",F;
+
+
+// the same poly but in kk(x)[y]
+f := eta(F);
+// function field
+K<y>  := FunctionField(f);
+// maximal order
+R     := MaximalOrderFinite(K);
+// canonical epimorphism PXY ->> R
+kappa := hom< PXY -> R | x,y >;
+
+
+
+/* Computes an inverse under kappa image A in kk[X,Y] of an element a in R 
+ * IMPORTANT: this function works only when {1,y,...,y^(n-1)} is an integral basis of R
+ */
+function preimage( a ) 
+  // initialize the preimage
+  A  := PXY ! 0;
+  // convert a to a list of coeffs
+  a_ := ElementToSequence( a );
+  // loop over coeffs
+  for i in [1..#a_] do 
+    // ith coeff of a
+    c := a_[i];
+    // map every coeff to PXY
+    A := A + lambda(c)*Y^(i-1);
+  end for;
+  return A;
+end function;
+
+/* Computes the contraction under kappa of an ideal I in R */
+function contract_ideal( I ) 
+  return ideal< PXY | [ preimage(a) : a in Generators(I) ] cat [ F ] >;
+end function;
+
+/* Computes the extension by kappa of an ideal J in kk[X,Y] */
+function extend_ideal( J )
+  return ideal< R | [ kappa(a) : a in Generators(J) ] >;
+end function;
+
+/* Radical of an Ideal in Dedekind Domain */
+function radical_by_contraction( I )
+    I_c := contract_ideal( I );
+    rad_I := Radical(I_c);
+    I_ce := extend_ideal(rad_I);
+    return I_ce;
+end function;
+
+/* Colon of two ideals in a Dedekind domain 
+ * computed using contraction-extension
+ */ 
+function colon_by_contraction( I, J )
+    I_c := contract_ideal( I );
+    J_c := contract_ideal( J );
+    colon_IJ := IdealQuotient(I_c,J_c);
+    colonIJ_e := extend_ideal(colon_IJ);
+    return colonIJ_e;
+end function;
+
+// chose the raical method
+rad := radical_by_contraction;
+// chose the colon method
+colon := colon_by_contraction;
+
+/* naive radical decomposition procedure 
+ * using full factorization
+ */
+function radical_decomposition_naive( I ) 
+    // take the ring in which I is an ideal
+    R := Order(I);
+    // perform full-fledge factorization
+    // (that's why it is a naive method)
+    FactI := Factorization(I);
+    // find the maximum multiplicity of prime ideals dividing I
+    m, _ := Maximum([ pk[2] : pk in FactI ]);
+    // let G be an epty list with universe being the monoid of ideals
+    G := [ Parent(I) | ];
+    // loop over all mutliplicities
+    for j in [1..m] do
+        // start from g_j = <1> = R
+        g_j := ideal< R | 1 >;
+        // loop over all points dividing a
+        for pk in FactI do 
+            // if the multiplicity of a point is j, then multiply g_j by the pooint
+            if pk[2] eq j then
+                g_j := g_j * pk[1];
+            end if;
+        end for;
+        // append g_j to the list G
+        Append(~G, g_j);
+    end for;
+    return G;
+end function;
+
+/* Musser-like algorithm for radical decomposition
+ * of an ideal I in a Dedekind domain 
+ */
+function radical_decomposition_Musser( a )
+    // take the ring in which a is an ideal
+    R := Order(a);
+    // initialize a0 to be I
+    a0 := a;
+    // initialize b1 to be the radical of a0
+    b1 := rad( a0 );
+    // initialize a1 to be the ideal quotient
+    a1 := colon(a0,b1);
+    // initialize G to be an empty list
+    G := [ Parent(a) | ];
+    bi   := b1;
+    ai   := a1;
+    while not IsOne(bi) do        
+        // set b_{i+1} = gcd(ai,bi) = ai + bi
+        bi_1 := ai + bi;
+        // set a_{i+1} to be (ai:bi)
+        ai_1 := colon(ai,bi_1);
+        // compute the next radical factor of I
+        gi   := colon(bi,bi_1);
+        // end append it to the list G
+        Append(~G,gi);
+        // update ai, bi
+        bi := bi_1;
+        ai := ai_1;
+    end while;
+    // return the result = list G
+    return G;
+end function;
+
+// select radical decomposition method
+radical_decomposition := radical_decomposition_Musser;
+
+/* This function return a "universal ideal" od degree d,
+ * that is the intersecetion of all prime ideals with residual 
+ * degree = d
+ * This is a naive implementation that generates all
+ * the primes. Very sloooow.
+ */
+function universal_ideal_naive( R, d ) 
+  // get the function field from the ring R
+  K := FunctionField(R);
+  // initialize D to be a trivial divisor
+  D := Id(DivisorGroup(K));
+  // loop over all k dividing d
+  for k in Divisors(d) do
+    // compute all the primes of R of degree d
+    Pd := Places(K, k);
+    // and add them to D
+    for p in Pd do
+      D := D + p;
+    end for;
+  end for;
+  // convert D into an ideal
+  I, _ := Ideals(D);
+  return I;
+end function;
+
+/* This function return a "universal ideal" od degree d,
+ * that is the intersecetion of all prime ideals with residual 
+ * degree = d
+ * This is a normal implementation using lemma from the paper
+ */
+function universal_ideal_normal( R, d )
+  // get the function field from the ring R
+  K := FunctionField(R);
+  // size of the field of constants
+  q := #ConstantField(K);
+  // get the generators x,y of K
+  x := SeparatingElement(K);
+  y := K.1;
+  return ideal< R | x^(q^d)-x, y^(q^d)-y >;
+end function;
+
+// chose the universal ideal method
+universal_ideal := universal_ideal_normal;
+
+/* This function computes the distinct degree factorization 
+ * of a radical ideal I
+ */
+function distinct_degree_factorization( I )
+    // take the ring in which I is an ideal
+    R := Order(I);
+    K := FunctionField(R);
+    // size of the field of constants
+    q := #ConstantField(K);
+    // get the generators x,y of K
+    x := SeparatingElement(K);
+    y := K.1;
+    // Initialization
+    k := 1;
+    ak := I;
+    G := [];
+    // Main loop
+    while not IsOne(ak) do
+        // set u_{k} = < x^{q^k}-x, y^{q^k}-y>
+        uk := universal_ideal(R,k);
+        // set g_{k} = u_{k} + a_{k}
+        gk := uk + ak;
+        // end append it to the list G
+        Append(~G,gk);
+        // set a_{k+1} = (a_{k} : g_{k})
+        ak_1 := colon(ak,gk);
+        // set k = K+1 and a_{k} = a_{k+1}
+        k := k+1;
+        ak := ak_1;
+        end while;
+    // return the result = list G
+    return G;
+end function;
+
+/* This function computes the equal degree factorization 
+ * of a radical ideal I
+ */
+function equal_degree_factorization( I, d )
+    // Degree(I) returns the residual degree providing that I is a PRIME ideal! 
+    // Hence we cannot use it in equal_degree_factorization.
+    // take the ring in which I is an ideal
+    R := Order(I);
+    K := FunctionField(R);
+    // size of the field of constants
+    q := #ConstantField(K);
+    // Recursion termination
+    // The next line does not work on my Magma
+    // and there is sth. wrong with the computation of
+    // R_I in the online calculator
+//    R_I := quo<R|I>;
+    // CHANGED to the following work-around
+    J := contract_ideal(I);
+    R_I := quo< PXY | J >;
+    if #R_I eq q^d then
+        // CHANGED: return a list consisting of I
+        return [ I ];
+    end if;
+    // Main loop
+    repeat
+        // CHANGED: incorrect random el. generation
+        // TODO: I hard-coded object size 10. 
+        // It is definitely wrong to have a fixed, constant size!!!
+        // Needs to be changed depending on I and d
+        b := Random( R, 10 );
+        if b in I then
+            continue;
+        end if;
+        // CHANGED: quotient ring element here
+        //b_ := R_I ! b;
+        // CHANGED: work-around
+        b_ := R_I ! preimage(b);
+        if not IsOne(b_^(q^d-1)) then
+            b := ideal<R|b> + I;
+            c := colon(I,b);
+            // Recursion
+            r1 := equal_degree_factorization( b,d );
+            r2 := equal_degree_factorization( c,d );
+            // CHANGED: concatenate the lists
+            return r1 cat r2;
+        end if;
+    until false;
+end function;
+
+/* This function computes the full factorization 
+ * of an ideal I using the methods from the paper
+ */
+function full_factorization( I ) 
+    // list of pairs: ( prime factor, multiplicity )
+    Factors := [ ];
+    // call radical decomposition & loop over the results
+    G1 := radical_decomposition(I);
+    //print "rad_dec = ", G1;
+    for m in [1..#G1] do
+        ii := G1[m];
+        print "rad_dec_gen = ",Generators(ii);
+        // CHANGED: skip the trivial factors
+        if IsOne(ii) then 
+            continue;
+        end if;
+        // call the distinct degree factorization & loop over the results
+        G2 := distinct_degree_factorization( ii );
+        //print "dist_dec = ", Generators(G2);
+        for d in [1..#G2]  do
+            jj := G2[d];
+            print "dist_dec_gen = ", Generators(jj);
+            // CHANGED: skip the trivial factors
+            if IsOne(jj) then 
+                continue;
+            end if;
+            // call the equal degree factorization & append the results to the factors
+            // CHANGED: we cannot use append, as it adds a single element only
+            // Append appends a SINGLE element to the list, we cannot use it as 
+            // equal_degree_factorization returns a LIST of factors.
+            Primes_d := equal_degree_factorization( jj, d );
+            for v in [1..#Primes_d] do
+                vv := Primes_d[v];
+                print "equal_deg = ", Generators(vv);
+            end for;
+            Factors cat:= [ <p,m> : p in Primes_d ];
+        end for;
+    end for;
+    // return the list of factors
+    return Factors;
+end function;
+
+
+// example nontrivial ideal
+P2 := Places(K,2);
+P3 := Places(K,3);
+P4 := Places(K,4);
+//D := P4[14]+ 3*P3[12] + P2[6] + P3[2];
+D := P4[14]+ 4*P3[12] + P2[6] + 2*P3[2];
+I, I_ := Ideals(D);
+I := Denominator(I)*I;
+
+print "I =", Generators(I);
+time Fact_I := full_factorization( I );
+print " Fact_I =", Fact_I;
+
+// TEST a result against the built-in method:
+//time Fact_I_ := Factorization( I );
+//print " Fact_I_ =", Fact_I_;
+//Seqset(Fact_I) eq Seqset(Fact_I_);
+
+/* TODO:
+ * 
+ * 1) Correct the construction of the random element in 'equal_degree_factorization' so 
+ *    that it no longer has a "magic number" 10, but the size of the object depends
+ *    on I and d. Or maybe grows slowly starting from 1 and increasing if the current size
+ *    is not enough to built a proper divisor?
+ * 2) Make all the function independednt of a prior inicjalization of R, kappa and so on, 
+ *    so that they may be called for any ideal
+ * 3) Perform a throughout testing and efficiency comparizon to the built-in 
+ *    Factorization function
+ */
