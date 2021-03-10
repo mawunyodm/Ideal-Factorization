@@ -8,4 +8,4 @@ domain in question.
 The authors implemented algorithms described in this paper in a computer algebra system Magma.
 We also preset two examples computed using our implementation.
 
-<a href="http://www.math.us.edu.pl/pkoprowski/papers/radical_decomposition.pdf">Link to paper</a>
+<a href="http://www.math.us.edu.pl/pkoprowski/papers/radical_decomposition.pdf">Link to publication</a>
